@@ -617,7 +617,7 @@ class NanoDataOverviewGenerator:
                 ax = plt.subplot(rows, cols, i + 1)
                 
                 if img_data is not None and len(img_data.shape) == 2:
-                    im = ax.imshow(img_data, cmap='viridis', aspect='auto', 
+                    im = ax.imshow(img_data, cmap='afmhot', aspect='auto',
                                   interpolation='nearest', origin='lower')
                     
                     if i == 0:
