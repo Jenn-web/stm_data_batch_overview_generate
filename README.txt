@@ -1,3 +1,6 @@
+STM文件比较多时查阅目标数据文件不易，给每个文件夹生成概览图。
+主要是AI写的，我调教了gwyfile和nanonispy2这两个包的用法，AI似乎尚不熟悉。仅此留存。
+
 第一步：创建环境。在文件所在目录打开终端，输入执行：
 
 conda env create -f environment.yml
