@@ -50,6 +50,66 @@ class JupyterNanoDataOverviewGenerator:
         self.output_area = None
         self.results = {}
         self.is_jupyter = self._check_jupyter_environment()
+    
+    @staticmethod
+    def _preprocess_image_data(data: np.ndarray, percentile_range: Tuple[float, float] = (2, 98)) -> np.ndarray:
+        """
+        预处理图像数据以处理未扫描区域和尖锐变化
+        
+        参数:
+            data: 原始图像数据
+            percentile_range: 用于稳健归一化的百分位范围，默认(2, 98)
+            
+        返回:
+            处理后的数据
+        """
+        if data is None or data.size == 0:
+            return data
+        
+        # 创建数据副本以避免修改原始数据
+        processed_data = data.copy()
+        
+        # 处理NaN值
+        if np.isnan(processed_data).any():
+            processed_data = np.nan_to_num(processed_data, nan=np.nanmedian(processed_data))
+        
+        # 检测并处理常量区域（未扫描区域）
+        # 如果数据中有大量相同的值（比如0），这些可能是未扫描区域
+        unique_values, counts = np.unique(processed_data, return_counts=True)
+        total_pixels = processed_data.size
+        
+        # 如果某个值占据超过10%的像素，认为它可能是未扫描区域的填充值
+        mask = None
+        for value, count in zip(unique_values, counts):
+            if count / total_pixels > 0.1:
+                # 创建掩码，排除这些常量区域
+                if mask is None:
+                    mask = (processed_data != value)
+                else:
+                    mask = mask & (processed_data != value)
+        
+        # 如果找到了常量区域，使用掩码计算百分位数
+        if mask is not None and mask.sum() > 0:
+            valid_data = processed_data[mask]
+        else:
+            valid_data = processed_data.flatten()
+        
+        # 使用百分位数进行稳健归一化，避免异常值影响
+        if len(valid_data) > 0:
+            vmin = np.percentile(valid_data, percentile_range[0])
+            vmax = np.percentile(valid_data, percentile_range[1])
+            
+            # 避免vmin == vmax的情况
+            if vmax - vmin < 1e-10:
+                vmin = np.min(valid_data)
+                vmax = np.max(valid_data)
+                if vmax - vmin < 1e-10:
+                    vmax = vmin + 1.0
+            
+            # 裁剪数据到百分位范围，避免极端值影响可视化
+            processed_data = np.clip(processed_data, vmin, vmax)
+        
+        return processed_data
         
     def _check_jupyter_environment(self) -> bool:
         """检查是否在Jupyter环境中运行"""
@@ -389,13 +449,29 @@ class JupyterNanoDataOverviewGenerator:
             fig_height = rows * figsize_per_img[1]
             fig = plt.figure(figsize=(fig_width, fig_height), dpi=150)
             
+            # 预处理所有图像以获得一致的颜色范围
+            processed_images = [self._preprocess_image_data(img) for img in current_images]
+            
+            # 计算所有预处理图像的全局最小值和最大值以保持颜色一致性
+            all_valid_data = []
+            for img in processed_images:
+                if img is not None and img.size > 0:
+                    all_valid_data.extend(img.flatten())
+            
+            if all_valid_data:
+                global_vmin = np.min(all_valid_data)
+                global_vmax = np.max(all_valid_data)
+            else:
+                global_vmin, global_vmax = 0, 1
+            
             # 添加子图
-            for i, (img_data, filename) in enumerate(zip(current_images, current_names)):
+            for i, (img_data, filename) in enumerate(zip(processed_images, current_names)):
                 ax = plt.subplot(rows, cols, i + 1)
                 
                 if img_data is not None and len(img_data.shape) == 2:
                     im = ax.imshow(img_data, cmap='viridis', aspect='auto', 
-                                  interpolation='nearest', origin='lower')
+                                  interpolation='nearest', origin='lower',
+                                  vmin=global_vmin, vmax=global_vmax)
                     
                     # 只在第一个子图添加颜色条
                     if i == 0:
@@ -508,6 +584,66 @@ class NanoDataOverviewGenerator:
         if self.file_type == '.gwy' and not GWYFILE_AVAILABLE:
             raise ImportError("需要gwyfile库处理.gwy文件")
     
+    @staticmethod
+    def _preprocess_image_data(data: np.ndarray, percentile_range: Tuple[float, float] = (2, 98)) -> np.ndarray:
+        """
+        预处理图像数据以处理未扫描区域和尖锐变化
+        
+        参数:
+            data: 原始图像数据
+            percentile_range: 用于稳健归一化的百分位范围，默认(2, 98)
+            
+        返回:
+            处理后的数据
+        """
+        if data is None or data.size == 0:
+            return data
+        
+        # 创建数据副本以避免修改原始数据
+        processed_data = data.copy()
+        
+        # 处理NaN值
+        if np.isnan(processed_data).any():
+            processed_data = np.nan_to_num(processed_data, nan=np.nanmedian(processed_data))
+        
+        # 检测并处理常量区域（未扫描区域）
+        # 如果数据中有大量相同的值（比如0），这些可能是未扫描区域
+        unique_values, counts = np.unique(processed_data, return_counts=True)
+        total_pixels = processed_data.size
+        
+        # 如果某个值占据超过10%的像素，认为它可能是未扫描区域的填充值
+        mask = None
+        for value, count in zip(unique_values, counts):
+            if count / total_pixels > 0.1:
+                # 创建掩码，排除这些常量区域
+                if mask is None:
+                    mask = (processed_data != value)
+                else:
+                    mask = mask & (processed_data != value)
+        
+        # 如果找到了常量区域，使用掩码计算百分位数
+        if mask is not None and mask.sum() > 0:
+            valid_data = processed_data[mask]
+        else:
+            valid_data = processed_data.flatten()
+        
+        # 使用百分位数进行稳健归一化，避免异常值影响
+        if len(valid_data) > 0:
+            vmin = np.percentile(valid_data, percentile_range[0])
+            vmax = np.percentile(valid_data, percentile_range[1])
+            
+            # 避免vmin == vmax的情况
+            if vmax - vmin < 1e-10:
+                vmin = np.min(valid_data)
+                vmax = np.max(valid_data)
+                if vmax - vmin < 1e-10:
+                    vmax = vmin + 1.0
+            
+            # 裁剪数据到百分位范围，避免极端值影响可视化
+            processed_data = np.clip(processed_data, vmin, vmax)
+        
+        return processed_data
+    
     def process_directory(self, current_dir: Path) -> None:
         """处理单个目录"""
         # 查找指定类型的文件
@@ -603,12 +739,28 @@ class NanoDataOverviewGenerator:
             fig_height = rows * self.figsize_per_img[1]
             fig = plt.figure(figsize=(fig_width, fig_height), dpi=150)
             
-            for i, (img_data, filename) in enumerate(zip(current_images, current_names)):
+            # 预处理所有图像以获得一致的颜色范围
+            processed_images = [self._preprocess_image_data(img) for img in current_images]
+            
+            # 计算所有预处理图像的全局最小值和最大值以保持颜色一致性
+            all_valid_data = []
+            for img in processed_images:
+                if img is not None and img.size > 0:
+                    all_valid_data.extend(img.flatten())
+            
+            if all_valid_data:
+                global_vmin = np.min(all_valid_data)
+                global_vmax = np.max(all_valid_data)
+            else:
+                global_vmin, global_vmax = 0, 1
+            
+            for i, (img_data, filename) in enumerate(zip(processed_images, current_names)):
                 ax = plt.subplot(rows, cols, i + 1)
                 
                 if img_data is not None and len(img_data.shape) == 2:
                     im = ax.imshow(img_data, cmap='afmhot', aspect='auto',
-                                  interpolation='nearest', origin='lower')
+                                  interpolation='nearest', origin='lower',
+                                  vmin=global_vmin, vmax=global_vmax)
                     
                     if i == 0:
                         plt.colorbar(im, ax=ax, fraction=0.046, pad=0.04)
