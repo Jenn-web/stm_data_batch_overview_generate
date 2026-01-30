@@ -556,21 +556,13 @@ class NanoDataOverviewGenerator:
     def _read_sxm_file(self, file_path: Path) -> Optional[np.ndarray]:
         """读取.sxm文件"""
         try:
-            data = nap.read(file_path)
+            scan = nap.read.Scan(str(file_path))
             
-            if hasattr(data, 'signals'):
-                for signal_name in data.signals.keys():
-                    signal_data = data.signals[signal_name]
-                    if isinstance(signal_data, np.ndarray) and len(signal_data.shape) == 2:
-                        return signal_data
-                
-                for attr in ['Z', 'Current', 'Topography', 'data']:
-                    if hasattr(data, attr):
-                        channel_data = getattr(data, attr)
-                        if isinstance(channel_data, np.ndarray) and len(channel_data.shape) == 2:
-                            return channel_data
-            
-            return None
+            # 尝试获取数据
+            channels = scan._load_data()
+            channel = channels['Z']
+            data = channel['forward']
+            return data
             
         except Exception as e:
             print(f"读取.sxm文件 {file_path.name} 时出错: {str(e)[:100]}")
@@ -579,16 +571,14 @@ class NanoDataOverviewGenerator:
     def _read_gwy_file(self, file_path: Path) -> Optional[np.ndarray]:
         """读取.gwy文件"""
         try:
-            gwy_obj = gwyfile.load(str(file_path))
-            
-            for key, value in gwy_obj.items():
-                if isinstance(value, dict) and 'data' in value:
-                    data_array = value['data']
-                    if isinstance(data_array, np.ndarray) and len(data_array.shape) == 2:
-                        return data_array
-            
-            return None
-            
+            container = gwyfile.load(str(file_path))  # 加载.gwy文件
+            data_fields = gwyfile.util.get_datafields(container)  # 获取所有数据通道
+            if not data_fields:
+                raise ValueError("No data fields found in the file")
+            data_field = data_fields['Z (Forward)']  # 取第一个数据通道
+            data = data_field.data  # 获取数据数组
+            return data
+
         except Exception as e:
             print(f"读取.gwy文件 {file_path.name} 时出错: {str(e)[:100]}")
             return None
